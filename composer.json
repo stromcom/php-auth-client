@@ -1,0 +1,57 @@
+{
+    "name": "stromcom/auth-client",
+    "description": "Official PHP client for the STROMCOM SSO / OAuth 2.0 / OIDC server (auth.stromcom.cz).",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["stromcom", "sso", "oauth2", "oidc", "auth", "jwt", "client"],
+    "homepage": "https://auth.stromcom.cz",
+    "require": {
+        "php": "^8.3",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-openssl": "*",
+        "lcobucci/jwt": "^5.5"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5",
+        "phpstan/phpstan": "^2.1",
+        "friendsofphp/php-cs-fixer": "^3.94"
+    },
+    "scripts": {
+        "test:unit": "phpunit",
+        "phpstan": "vendor/bin/phpstan analyse -c phpstan.dist.neon --memory-limit=512M",
+        "cs": "php-cs-fixer fix --dry-run --diff --cache-file=tmp/php-cs-fixer.cache",
+        "cs-fix": "php-cs-fixer fix --cache-file=tmp/php-cs-fixer.cache",
+        "test": [
+            "@test:unit"
+        ],
+        "ca": [
+            "@phpstan",
+            "@test"
+        ]
+    },
+    "autoload": {
+        "psr-4": {
+            "Stromcom\\AuthClient\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Stromcom\\AuthClient\\Tests\\": "tests/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Petr Bíža",
+            "email": "petr.biza@stromcom.cz"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/stromcom/php-auth-client/issues",
+        "source": "https://github.com/stromcom/php-auth-client"
+    },
+    "minimum-stability": "stable",
+    "config": {
+        "sort-packages": true
+    }
+}
