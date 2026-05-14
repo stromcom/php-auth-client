@@ -43,7 +43,11 @@ Failure raises `TokenVerificationException`.
 | `$claims->isService()`          | `token_use === 'service'`                                |
 | `$claims->email`                | `email` (`null` if not in scope)                         |
 | `$claims->emailVerified`        | `email_verified`                                         |
-| `$claims->name`                 | `name`                                                   |
+| `$claims->name`                 | `name` (display name, scope `profile`)                   |
+| `$claims->givenName`            | `given_name` (scope `profile`)                           |
+| `$claims->familyName`           | `family_name` (scope `profile`)                          |
+| `$claims->phoneNumber`          | `phone_number` (E.164, scope `phone`)                    |
+| `$claims->phoneNumberVerified`  | `phone_number_verified` (scope `phone`)                  |
 | `$claims->displayName()`        | `name` → `email` → `client_name` → `subject` (best label)|
 | `$claims->scopes`               | `scopes` (list, accepts string or list from server)      |
 | `$claims->hasScope($s)`         | `in_array($s, scopes)`                                   |
@@ -99,13 +103,14 @@ try {
 
 For **user tokens**, the auth server filters claims by OIDC scope:
 
-| Scope     | Claims emitted in JWT                                |
-|-----------|------------------------------------------------------|
-| `openid`  | `sub`                                                |
-| `profile` | `name`, `picture`, `locale`, `zoneinfo`, `updated_at`|
-| `email`   | `email`, `email_verified`                            |
-| `roles`   | `roles`, `is_admin`                                  |
-| `groups`  | `groups`                                             |
+| Scope     | Claims emitted in JWT                                                            |
+|-----------|----------------------------------------------------------------------------------|
+| `openid`  | `sub`                                                                            |
+| `profile` | `name`, `given_name`, `family_name`, `picture`, `locale`, `zoneinfo`, `updated_at` |
+| `email`   | `email`, `email_verified`                                                        |
+| `phone`   | `phone_number`, `phone_number_verified`                                          |
+| `roles`   | `roles`, `is_admin`                                                              |
+| `groups`  | `groups`                                                                         |
 
 A user token issued with `scope=openid email` contains `sub`, `email`,
 `email_verified`, **and nothing else from the user profile**. If you need

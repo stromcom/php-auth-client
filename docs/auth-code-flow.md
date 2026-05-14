@@ -250,13 +250,14 @@ who requests only `scope=openid email` will get a JWT containing `sub` and
 `email`, but **not** `name`, `roles`, `groups`. This is intentional — the
 client requests what it needs.
 
-| Scope     | Claims emitted                                       |
-|-----------|------------------------------------------------------|
-| `openid`  | `sub`                                                |
-| `profile` | `name`, `picture`, `locale`, `zoneinfo`, `updated_at`|
-| `email`   | `email`, `email_verified`                            |
-| `roles`   | `roles`, `is_admin`                                  |
-| `groups`  | `groups`                                             |
+| Scope     | Claims emitted                                                                     |
+|-----------|------------------------------------------------------------------------------------|
+| `openid`  | `sub`                                                                              |
+| `profile` | `name`, `given_name`, `family_name`, `picture`, `locale`, `zoneinfo`, `updated_at` |
+| `email`   | `email`, `email_verified`                                                          |
+| `phone`   | `phone_number`, `phone_number_verified`                                            |
+| `roles`   | `roles`, `is_admin`                                                                |
+| `groups`  | `groups`                                                                           |
 
 If your authorization logic depends on `groups`, request `scope=groups`
 explicitly.

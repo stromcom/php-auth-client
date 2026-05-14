@@ -143,7 +143,8 @@ This SDK is paired with `auth.stromcom.cz`. **Specific contract relied on:**
 - Always present: `iss`, `sub`, `aud`, `iat`, `nbf`, `exp`, `jti`, `scopes`, `token_use`
 - Service tokens add: `client_id`, `client_name`, `roles`, `is_admin`
 - User tokens add (filtered by scope, OIDC Core 1.0 §5.4):
-  `name`, `email`, `email_verified`, `picture`, `locale`, `zoneinfo`,
+  `name`, `given_name`, `family_name`, `email`, `email_verified`,
+  `phone_number`, `phone_number_verified`, `picture`, `locale`, `zoneinfo`,
   `updated_at`, `roles`, `groups`, `is_admin`
 
 If the server changes any of this, this SDK needs corresponding updates.

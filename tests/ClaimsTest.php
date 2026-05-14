@@ -20,7 +20,11 @@ final class ClaimsTest extends TestCase {
       'token_use'  => 'user',
       'email'      => 'ja@firma.cz',
       'email_verified' => true,
-      'name'       => 'Jan Novák',
+      'name'        => 'Jan Novák',
+      'given_name'  => 'Jan',
+      'family_name' => 'Novák',
+      'phone_number' => '+420123456789',
+      'phone_number_verified' => true,
       'scopes'     => ['openid', 'email', 'groups'],
       'groups'     => ['translate-editor', 'beta'],
       'roles'      => ['auth.admin'],
@@ -38,6 +42,23 @@ final class ClaimsTest extends TestCase {
     self::assertTrue($claims->isAdmin);
     self::assertSame('ja@firma.cz', $claims->email);
     self::assertTrue($claims->emailVerified);
+    self::assertSame('Jan', $claims->givenName);
+    self::assertSame('Novák', $claims->familyName);
+    self::assertSame('+420123456789', $claims->phoneNumber);
+    self::assertTrue($claims->phoneNumberVerified);
+  }
+
+  public function testPersonalClaimsDefaultToNullWhenAbsent(): void {
+    $claims = Claims::fromPayload([
+      'sub'       => '1',
+      'iss'       => 'https://x',
+      'token_use' => 'user',
+    ]);
+
+    self::assertNull($claims->givenName);
+    self::assertNull($claims->familyName);
+    self::assertNull($claims->phoneNumber);
+    self::assertNull($claims->phoneNumberVerified);
   }
 
   public function testServiceTokenPayload(): void {

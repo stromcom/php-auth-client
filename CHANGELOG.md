@@ -4,6 +4,23 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this package adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-05-14
+
+### Added
+
+- `Claims::$givenName` / `Claims::$familyName` — OIDC `given_name` / `family_name`
+  claims (scope `profile`). The auth server now stores `given_name` and
+  `family_name` separately from the display `name`.
+- `Claims::$phoneNumber` / `Claims::$phoneNumberVerified` — OIDC `phone_number`
+  and `phone_number_verified` claims under the new `phone` scope. Request
+  `scope=phone` at `beginAuthorization()` to receive them.
+
+### Notes
+
+- All new claims are nullable; tokens issued without the relevant scope (or by
+  pre-1.1 servers) keep them as `null` — no breaking change for consumers that
+  only read `email` / `name` / `roles` / `groups`.
+
 ## [1.0.0] — 2026-05-13
 
 Initial public release.

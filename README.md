@@ -115,7 +115,12 @@ $claims = $auth->verify($jwt);
 // Identity
 $claims->subject;              // sub
 $claims->email;                // ?string
-$claims->name;                 // ?string
+$claims->emailVerified;        // ?bool
+$claims->name;                 // ?string (display name, scope `profile`)
+$claims->givenName;            // ?string (scope `profile`)
+$claims->familyName;           // ?string (scope `profile`)
+$claims->phoneNumber;          // ?string E.164 (scope `phone`)
+$claims->phoneNumberVerified;  // ?bool   (scope `phone`)
 $claims->isAdmin;              // bool
 $claims->displayName();        // name → email → client_name → sub
 $claims->audience();           // first aud
