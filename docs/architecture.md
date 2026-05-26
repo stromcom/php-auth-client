@@ -112,9 +112,11 @@ What we still own:
   [`src/Internal/JwkRsaKey.php`](../src/Internal/JwkRsaKey.php). It
   constructs a PEM-encoded RSA public key from JWK `n` and `e` by emitting
   standard ASN.1 DER (SubjectPublicKeyInfo) — ~70 LoC.
-- **`token_use` strict check.** Not a standard claim, lcobucci doesn't know
-  about it. Asserted in `TokenVerifier::verify()` after the standard
-  constraints pass.
+- **RFC 9068 `typ` enforcement and the OIDC `nonce` / `azp` checks.**
+  lcobucci/jwt provides primitives (`SignedWith`, `IssuedBy`, `LooseValidAt`,
+  `PermittedFor`); the spec-level rules around the `typ` JOSE header, the
+  required-claims set, and the OIDC §3.1.3.7 id_token validation chain live in
+  `TokenVerifier::verify()` and `TokenVerifier::verifyIdToken()`.
 - **Minimal PSR-20 clock** (`Internal/SystemClock`). Avoids pulling
   `lcobucci/clock` as another transitive dep.
 
@@ -135,23 +137,47 @@ add an **optional** `?LoggerInterface` argument to `Client` that defaults to
 
 ## Strict-mode semantics
 
-`TokenVerifier` enforces:
+### `verify()` — RFC 9068 access token
 
-| Check               | Behavior on failure                              |
-|---------------------|--------------------------------------------------|
-| 3-segment JWT       | `TokenVerificationException`                     |
-| `alg = RS256`       | `TokenVerificationException` (we don't accept other algs) |
-| `kid` present, found in JWKS | Invalidate cache once, re-fetch, retry; then `TokenVerificationException` |
-| RS256 signature     | `TokenVerificationException`                     |
-| `iss` matches configured issuer | `TokenVerificationException`            |
-| `token_use` non-empty string    | `TokenVerificationException`            |
-| `exp` not yet reached (with `leeway`) | `TokenVerificationException`      |
-| `nbf` reached (with `leeway`)   | `TokenVerificationException`            |
-| `iat` not in the future (with `leeway`) | `TokenVerificationException`    |
-| `aud` matches expected (when `$expectedAudiences` passed) | `TokenVerificationException` |
+| Check                                                            | Source            |
+|------------------------------------------------------------------|-------------------|
+| 3-segment JWT                                                    |                   |
+| `alg = RS256`                                                    |                   |
+| JOSE `typ` ∈ {`at+jwt`, `application/at+jwt`}                    | RFC 9068 §2.1     |
+| `kid` present, found in JWKS (with rotate-and-retry)             |                   |
+| RS256 signature                                                  |                   |
+| `iss == Configuration::$issuer`                                  | RFC 9068 §2.2     |
+| `aud` contains `$expectedAudience`                               | RFC 9068 §2.2     |
+| `exp` / `nbf` / `iat` valid (with `leeway`)                      | RFC 9068 §2.2     |
+| Required string claims present: `sub`, `client_id`, `jti`        | RFC 9068 §2.2     |
+| Required integer claim present: `iat`                            | RFC 9068 §2.2     |
 
-`Client::verify()` passes `$expectedAudiences = [$clientId]` by default — a
-JWT must have the consuming app's own `client_id` in its `aud` claim.
+`$expectedAudience` is mandatory — there is no default. Resource servers pass
+their own audience identifier; confidential clients validating tokens issued to
+themselves pass `Configuration::$clientId`.
+
+### `verifyIdToken()` — OIDC Core 1.0 id_token
+
+| Check                                                            | Source            |
+|------------------------------------------------------------------|-------------------|
+| 3-segment JWT                                                    |                   |
+| `alg = RS256`                                                    |                   |
+| JOSE `typ` ≠ `at+jwt`                                            | RFC 8725 §3.11    |
+| `kid` present, found in JWKS                                     |                   |
+| RS256 signature                                                  |                   |
+| `iss == Configuration::$issuer`                                  | OIDC §3.1.3.7     |
+| `aud` contains `Configuration::$clientId`                        | OIDC §3.1.3.7     |
+| `azp == clientId` when `aud` is multi-valued or `azp` is present | OIDC §3.1.3.7     |
+| `exp` / `iat` valid (with `leeway`)                              | OIDC §3.1.3.7     |
+| `nonce` present and timing-safe equal to `$expectedNonce`        | OIDC §3.1.3.7     |
+| Required claims present: `sub`, `iat`                            | OIDC §2           |
+
+### Not enforced by the verifier
+
+- **`token_use`.** Stromcom-specific extension claim, not in RFC 9068 / OIDC.
+  Exposed on `Claims::$tokenUse` as nullable; the helpers `isUser()`,
+  `isService()`, `requireUserToken()`, `requireServiceToken()` rely on it.
+  Callers that need the discrimination opt in explicitly.
 
 ## JWKS caching strategy
 
@@ -179,10 +205,15 @@ The SDK is paired specifically with `auth.stromcom.cz`. The SDK relies on:
 
 - RS256 only (no HS256, no ES256).
 - `kid` always present in the JWT header and in the JWKS.
-- `iss` always present (RFC 9068 strict).
-- `token_use` always present (one of `user`, `service`).
+- Access tokens have JOSE `typ = at+jwt` and the RFC 9068 §2.2 required claims
+  (`iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`).
+- id_tokens echo back the `nonce` from the authorization request and carry
+  `aud = client_id` (plus `azp = client_id` when multi-audience).
 - Service tokens have `sub == client_id == aud`.
 - The OIDC scope-to-claim mapping (filter on the server, not the client).
+- The stromcom-specific extras `token_use`, `roles`, `groups`, `is_admin`,
+  `client_name` are stable but not part of the spec; the SDK reads them but
+  does not enforce them in the verifier.
 
 If the server changes any of this, the SDK needs corresponding updates and
 test coverage.

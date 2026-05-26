@@ -65,7 +65,17 @@ if ($path === '/callback') {
     exit('OAuth error: ' . $e->errorCode);
   }
 
-  unset($_SESSION['oauth_verifier'], $_SESSION['oauth_state']);
+  $nonce = (string) ($_SESSION['oauth_nonce'] ?? '');
+  if ($tokens->idToken !== null && $nonce !== '') {
+    try {
+      $auth->verifyIdToken($tokens->idToken, $nonce);
+    } catch (TokenVerificationException $e) {
+      http_response_code(401);
+      exit('id_token verification failed: ' . $e->getMessage());
+    }
+  }
+
+  unset($_SESSION['oauth_verifier'], $_SESSION['oauth_state'], $_SESSION['oauth_nonce']);
 
   setcookie('access_token', $tokens->accessToken, [
     'expires'  => $tokens->expiresAt,
@@ -96,7 +106,7 @@ if ($path === '/api') {
   }
 
   try {
-    $claims = $auth->verify($accessToken);
+    $claims = $auth->verify($accessToken, $auth->configuration->clientId);
   } catch (TokenVerificationException) {
     header('Location: /login');
     exit;

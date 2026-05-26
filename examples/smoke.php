@@ -42,11 +42,11 @@ $tokens = $auth->clientCredentials();
 printf("   expires_in=%d  jwt_prefix=%s\n", $tokens->expiresIn, substr($tokens->accessToken, 0, 40) . '...');
 
 echo "\n3) Local JWT verification via JWKS\n";
-$claims = $auth->verify($tokens->accessToken);
+$claims = $auth->verify($tokens->accessToken, $auth->configuration->clientId);
 printf("   sub=%s\n   aud=[%s]\n   token_use=%s  isService=%s\n   displayName=%s\n",
   $claims->subject,
   implode(',', $claims->audiences),
-  $claims->tokenUse,
+  $claims->tokenUse ?? '(none)',
   $claims->isService() ? 'yes' : 'no',
   $claims->displayName(),
 );

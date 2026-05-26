@@ -117,7 +117,7 @@ The downstream service uses [`examples/verify-token.php`](../examples/verify-tok
 or its own variant to verify the JWT. Typical pattern on the consumer side:
 
 ```php
-$claims = $auth->verify($jwt);
+$claims = $auth->verify($jwt, $auth->configuration->clientId);
 $claims->requireServiceToken();
 $claims->requireRole('deploy.admin');
 ```
@@ -161,5 +161,6 @@ accounts.
 | `OAuthServerException: invalid_client`                   | Wrong `client_id`/`client_secret`, or the client has been revoked |
 | `OAuthServerException: unauthorized_client`              | Client doesn't have the `client_credentials` grant enabled        |
 | `OAuthServerException: invalid_scope`                    | Requested scope not allowed for this client                       |
-| `TokenVerificationException: token_use missing`          | Server is on an old version that doesn't emit `token_use` — upgrade the server |
+| `TokenVerificationException: Unexpected JWT typ ...`     | Token was not minted as an RFC 9068 `at+jwt` — usually a non-stromcom server or an id_token fed in by mistake |
+| `TokenVerificationException: JWT is missing required string claim "client_id"` | Server didn't emit `client_id` — non-RFC-9068 token        |
 | Sporadic `401` from downstream API                       | Token expired mid-request — increase `refreshLeewaySeconds` in your cache |

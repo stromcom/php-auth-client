@@ -43,7 +43,7 @@ final class AuthMiddleware implements MiddlewareInterface {
     }
 
     try {
-      $claims = $this->auth->verify($jwt);
+      $claims = $this->auth->verify($jwt, $this->auth->configuration->clientId);
       if ($this->requireUserToken) {
         $claims->requireUserToken();
       }

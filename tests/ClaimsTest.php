@@ -61,6 +61,14 @@ final class ClaimsTest extends TestCase {
     self::assertNull($claims->phoneNumberVerified);
   }
 
+  public function testTokenUseIsNullWhenAbsent(): void {
+    $claims = Claims::fromPayload(['sub' => '1', 'iss' => 'https://x']);
+
+    self::assertNull($claims->tokenUse);
+    self::assertFalse($claims->isUser());
+    self::assertFalse($claims->isService());
+  }
+
   public function testServiceTokenPayload(): void {
     $claims = Claims::fromPayload([
       'iss'         => 'https://auth.stromcom.cz',

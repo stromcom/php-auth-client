@@ -5,7 +5,9 @@ Implements OAuth 2.0 Authorization Code + PKCE, Client Credentials, JWT
 verification via JWKS with caching, UserInfo and logout. No framework
 dependencies, zero external JWT libraries.
 
-> **Status:** stable. RFC 9068 strict (requires `iss`, `token_use`, `at+jwt`).
+> **Status:** stable. Strict RFC 9068 for access tokens (`typ=at+jwt`, required
+> claims `iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`) and OIDC Core 1.0
+> §3.1.3.7 for id_tokens (audience, `azp`, nonce binding).
 >
 > Default issuer points to `https://auth.stromcom.cz`. For local development
 > against a dev auth server, override `issuer` accordingly.
@@ -58,8 +60,12 @@ if (!hash_equals($_SESSION['oauth_state'], $_GET['state'])) {
 }
 $tokens = $auth->exchangeCode($_GET['code'], $_SESSION['oauth_verifier']);
 
-// 3. Per request — verify the bearer JWT (JWKS is cached for 1 h).
-$claims = $auth->verify($tokens->accessToken);
+// 2b. Verify the OIDC id_token (binds the response to this session via nonce).
+$auth->verifyIdToken($tokens->idToken, $_SESSION['oauth_nonce']);
+unset($_SESSION['oauth_nonce']);
+
+// 3. Per request — verify the bearer access token (JWKS is cached for 1 h).
+$claims = $auth->verify($tokens->accessToken, $auth->configuration->clientId);
 if ($claims->hasGroup('translate-editor')) {
     // authorize
 }
@@ -107,11 +113,11 @@ issued remain valid until their `exp` — clear your own cookies too.
 
 ## Claims — object API
 
-`$auth->verify($jwt)` returns a `Claims` value object. Don't dig into the raw
-payload — use the rich API:
+`$auth->verify($jwt, $expectedAudience)` returns a `Claims` value object.
+Don't dig into the raw payload — use the rich API:
 
 ```php
-$claims = $auth->verify($jwt);
+$claims = $auth->verify($jwt, $auth->configuration->clientId);
 
 // Identity
 $claims->subject;              // sub
@@ -222,7 +228,7 @@ how key rotation works without restart.
 | `ConfigurationException`       | Missing required field in `Configuration`                                     |
 | `TransportException`           | Network failure (cURL error, DNS, TLS, timeout)                               |
 | `OAuthServerException`         | Auth server returned an `error` (e.g. `invalid_grant`, `invalid_client`).     |
-| `TokenVerificationException`   | JWT signature / `iss` / `aud` / `exp` / `token_use` validation failed         |
+| `TokenVerificationException`   | JWT signature / `iss` / `aud` / `exp` / `typ` / required-claim / `nonce` validation failed |
 | `AuthorizationException`       | Missing role / group / scope, wrong `token_use`                               |
 | `AuthClientException`          | Base — catch this for anything thrown by the SDK                              |
 

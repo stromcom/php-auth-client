@@ -95,7 +95,14 @@ which check failed:
 | `JWT signature verification failed.`          | Bad signature                                                                  |
 | `JWT is missing iss claim (RFC 9068 REQUIRED).` | Server didn't emit `iss` — likely an old server version                      |
 | `JWT issuer mismatch: expected "...", got "...".` | `Configuration::$issuer` doesn't match what the server emits               |
-| `JWT is missing token_use claim.`             | Old server version                                                             |
+| `JWT is missing JOSE "typ" header — RFC 9068 access tokens MUST set typ=at+jwt.` | Server emitted a JWT without a `typ` header (non-RFC 9068)        |
+| `Unexpected JWT typ "..." — RFC 9068 access tokens MUST set typ=at+jwt. For OIDC id_tokens use verifyIdToken() instead.` | id_token fed into `verify()` instead of `verifyIdToken()`         |
+| `Refusing to verify a token with typ=at+jwt as an OIDC id_token (token confusion).` | Access token fed into `verifyIdToken()`                          |
+| `JWT is missing required string claim "..." `   | RFC 9068 §2.2 REQUIRED claim absent (`sub`, `client_id`, `jti`)                |
+| `JWT is missing required integer claim "..."` | RFC 9068 §2.2 REQUIRED `iat` absent or not an integer                          |
+| `OIDC id_token is missing the \`nonce\` claim.` | Server didn't echo back the nonce, or you called `verifyIdToken` with a non-OIDC token |
+| `OIDC id_token \`nonce\` does not match the expected value.` | Replay attempt, or nonce reused across flows                        |
+| `OIDC id_token \`azp\` ... does not match this client_id.` | Multi-audience id_token issued for a different relying party             |
 | `JWT audience mismatch: expected [...], got [...].` | Token issued for a different client                                      |
 | `JWT is expired.`                             | `now > exp` (even after `leeway`)                                              |
 | `JWT is not yet valid (nbf).`                 | `nbf > now` (clock skew or replay)                                             |

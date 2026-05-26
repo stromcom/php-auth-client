@@ -34,27 +34,142 @@ final class TokenVerifier {
   ) {}
 
   /**
-   * Verifies the JWT signature, issuer, exp/nbf/iat (with leeway), optionally
-   * audience, and the stromcom-specific `token_use` claim. Returns parsed
-   * claims.
+   * Verify an RFC 9068 access token (JWT Profile for OAuth 2.0 Access Tokens).
    *
-   * JWT parsing and validation are delegated to lcobucci/jwt; the orchestration
-   * (looking up the public key from JWKS by `kid`, transparent retry on key
-   * rotation, RFC 9068 strict-mode token_use check) lives here.
+   * Enforces, per RFC 9068 §2.1–2.2:
+   *  - JOSE header `typ` MUST be `at+jwt` (or `application/at+jwt`).
+   *  - `alg` MUST be RS256.
+   *  - REQUIRED claims present: `iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`.
+   *  - Signature verifies against JWKS by `kid`.
+   *  - `iss` equals Configuration::$issuer.
+   *  - `exp`/`nbf`/`iat` valid w.r.t. clock (with leeway).
+   *  - `aud` contains `$expectedAudience` (the resource server identifier — for
+   *    this client that is typically Configuration::$clientId, but resource APIs
+   *    pass their own audience).
    *
-   * @param list<string>|null $expectedAudiences Acceptable `aud` values. Null skips audience check.
+   * Note: `token_use` is a stromcom-specific extension claim, NOT defined by
+   * RFC 9068. It is preserved on `Claims::$tokenUse` when present but is not
+   * required by this verifier.
    *
    * @throws TokenVerificationException
    */
-  public function verify(string $jwt, ?array $expectedAudiences = null): Claims {
+  public function verify(string $jwt, string $expectedAudience): Claims {
+    [$token, $payload] = $this->verifyCore($jwt, $expectedAudience);
+
+    $rawTyp = $token->headers()->get('typ');
+    $typ = $this->normalizeTyp(is_string($rawTyp) ? $rawTyp : null);
+    if ($typ === null) {
+      throw new TokenVerificationException(
+        'JWT is missing JOSE "typ" header — RFC 9068 access tokens MUST set typ=at+jwt.',
+      );
+    }
+    if ($typ !== 'at+jwt') {
+      throw new TokenVerificationException(sprintf(
+        'Unexpected JWT typ "%s" — RFC 9068 access tokens MUST set typ=at+jwt. '
+        . 'For OIDC id_tokens use verifyIdToken() instead.',
+        $typ,
+      ));
+    }
+
+    self::requireStringClaim($payload, 'sub');
+    self::requireStringClaim($payload, 'client_id');
+    self::requireStringClaim($payload, 'jti');
+    self::requireIntClaim($payload, 'iat');
+
+    return Claims::fromPayload($payload);
+  }
+
+  /**
+   * Verify an OIDC Core 1.0 id_token per §3.1.3.7.
+   *
+   * Enforces:
+   *  - `alg` MUST be RS256.
+   *  - JOSE `typ` MUST NOT be `at+jwt` (prevents access-token / id-token
+   *    confusion per RFC 8725 §3.11).
+   *  - Signature verifies against JWKS.
+   *  - `iss` equals Configuration::$issuer.
+   *  - `aud` contains Configuration::$clientId.
+   *  - When `aud` is multi-valued OR `azp` is present, `azp` MUST equal
+   *    Configuration::$clientId.
+   *  - `exp`/`iat` valid w.r.t. clock (with leeway).
+   *  - `nonce` MUST be present and equal to `$expectedNonce` (timing-safe).
+   *  - REQUIRED claims present: `iss`, `sub`, `aud`, `exp`, `iat`.
+   *
+   * Pass the nonce you persisted from `Client::beginAuthorization()`; after a
+   * successful call invalidate it in your session (one-time use).
+   *
+   * @throws TokenVerificationException
+   */
+  public function verifyIdToken(string $jwt, string $expectedNonce): Claims {
+    if ($expectedNonce === '') {
+      throw new TokenVerificationException('Expected nonce must be a non-empty string.');
+    }
+
+    [$token, $payload] = $this->verifyCore($jwt, $this->configuration->clientId);
+
+    $rawTyp = $token->headers()->get('typ');
+    $typ = $this->normalizeTyp(is_string($rawTyp) ? $rawTyp : null);
+    if ($typ === 'at+jwt') {
+      throw new TokenVerificationException(
+        'Refusing to verify a token with typ=at+jwt as an OIDC id_token (token confusion).',
+      );
+    }
+
+    self::requireStringClaim($payload, 'sub');
+    self::requireIntClaim($payload, 'iat');
+
+    $aud = $payload['aud'] ?? null;
+    $audIsMulti = is_array($aud) && count($aud) > 1;
+    $azp = $payload['azp'] ?? null;
+    if ($audIsMulti || $azp !== null) {
+      if (!is_string($azp) || $azp === '') {
+        throw new TokenVerificationException(
+          'OIDC id_token with multiple audiences or `azp` requires a non-empty `azp` claim.',
+        );
+      }
+      if (!hash_equals($this->configuration->clientId, $azp)) {
+        throw new TokenVerificationException(sprintf(
+          'OIDC id_token `azp` "%s" does not match this client_id.',
+          $azp,
+        ));
+      }
+    }
+
+    $nonce = $payload['nonce'] ?? null;
+    if (!is_string($nonce) || $nonce === '') {
+      throw new TokenVerificationException('OIDC id_token is missing the `nonce` claim.');
+    }
+    if (!hash_equals($expectedNonce, $nonce)) {
+      throw new TokenVerificationException('OIDC id_token `nonce` does not match the expected value.');
+    }
+
+    return Claims::fromPayload($payload);
+  }
+
+  /**
+   * Shared core: parse, alg check, JWKS lookup (with kid-rotation retry),
+   * signature verification, iss / exp / nbf / iat (with leeway), aud.
+   *
+   * @return array{0: UnencryptedToken, 1: array<string, mixed>}
+   *
+   * @throws TokenVerificationException
+   */
+  private function verifyCore(string $jwt, string $expectedAudience): array {
     if ($jwt === '') {
       throw new TokenVerificationException('JWT is empty.');
     }
+    if ($expectedAudience === '') {
+      throw new TokenVerificationException('Expected audience must be a non-empty string.');
+    }
+
     $token = $this->parse($jwt);
 
     $alg = $token->headers()->get('alg');
     if ($alg !== 'RS256') {
-      throw new TokenVerificationException(sprintf('Unsupported JWT alg "%s" (only RS256 is supported).', is_string($alg) ? $alg : '(missing)'));
+      throw new TokenVerificationException(sprintf(
+        'Unsupported JWT alg "%s" (only RS256 is supported).',
+        is_string($alg) ? $alg : '(missing)',
+      ));
     }
 
     $kid = $token->headers()->get('kid');
@@ -64,7 +179,10 @@ final class TokenVerifier {
       $jwk = $this->findJwk(is_string($kid) ? $kid : null, forceRefresh: true);
     }
     if ($jwk === null) {
-      throw new TokenVerificationException(sprintf('No matching JWK found for kid "%s".', is_string($kid) ? $kid : '(none)'));
+      throw new TokenVerificationException(sprintf(
+        'No matching JWK found for kid "%s".',
+        is_string($kid) ? $kid : '(none)',
+      ));
     }
 
     $signer = new Sha256();
@@ -77,15 +195,8 @@ final class TokenVerifier {
         new SystemClock(),
         new DateInterval('PT' . $this->configuration->leeway . 'S'),
       ),
+      new PermittedFor($expectedAudience),
     ];
-    if ($expectedAudiences !== null) {
-      foreach ($expectedAudiences as $aud) {
-        if ($aud === '') {
-          continue;
-        }
-        $constraints[] = new PermittedFor($aud);
-      }
-    }
 
     try {
       (new Validator())->assert($token, ...$constraints);
@@ -93,13 +204,7 @@ final class TokenVerifier {
       throw new TokenVerificationException('JWT validation failed: ' . $e->getMessage(), previous: $e);
     }
 
-    $payload = self::extractClaims($token);
-
-    if (!isset($payload['token_use']) || !is_string($payload['token_use']) || $payload['token_use'] === '') {
-      throw new TokenVerificationException('JWT is missing token_use claim.');
-    }
-
-    return Claims::fromPayload($payload);
+    return [$token, self::extractClaims($token)];
   }
 
   /**
@@ -154,6 +259,21 @@ final class TokenVerifier {
   }
 
   /**
+   * Per RFC 7515 §4.1.9, producers SHOULD omit the "application/" prefix.
+   * Accept both forms; normalize to lowercase, prefix-stripped.
+   */
+  private function normalizeTyp(?string $typ): ?string {
+    if ($typ === null) {
+      return null;
+    }
+    $lower = strtolower($typ);
+    if (str_starts_with($lower, 'application/')) {
+      $lower = substr($lower, strlen('application/'));
+    }
+    return $lower === '' ? null : $lower;
+  }
+
+  /**
    * @return array<string, mixed>|null
    */
   private function findJwk(?string $kid, bool $forceRefresh = false): ?array {
@@ -176,6 +296,26 @@ final class TokenVerifier {
       return $key;
     }
     return null;
+  }
+
+  /**
+   * @param array<string, mixed> $payload
+   */
+  private static function requireStringClaim(array $payload, string $name): void {
+    $value = $payload[$name] ?? null;
+    if (!is_string($value) || $value === '') {
+      throw new TokenVerificationException(sprintf('JWT is missing required string claim "%s".', $name));
+    }
+  }
+
+  /**
+   * @param array<string, mixed> $payload
+   */
+  private static function requireIntClaim(array $payload, string $name): void {
+    $value = $payload[$name] ?? null;
+    if (!is_int($value)) {
+      throw new TokenVerificationException(sprintf('JWT is missing required integer claim "%s".', $name));
+    }
   }
 
   /**

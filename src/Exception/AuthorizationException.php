@@ -17,8 +17,12 @@ final class AuthorizationException extends AuthClientException {
     return new self(sprintf('Missing required scope "%s".', $scope));
   }
 
-  public static function wrongTokenUse(string $expected, string $actual): self {
-    return new self(sprintf('Token of type "%s" required, got "%s".', $expected, $actual));
+  public static function wrongTokenUse(string $expected, ?string $actual): self {
+    return new self(sprintf(
+      'Token of type "%s" required, got "%s".',
+      $expected,
+      $actual ?? '(none)',
+    ));
   }
 
 }

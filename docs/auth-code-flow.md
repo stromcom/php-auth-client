@@ -122,6 +122,29 @@ try {
 }
 ```
 
+**Verify the id_token next** (OIDC Core 1.0 §3.1.3.7). This binds the response
+to the user agent that initiated the flow via the `nonce`, and authenticates
+the end user — the access token is for resource access, not authentication.
+
+```php
+$nonce = $_SESSION['oauth_nonce'] ?? '';
+unset($_SESSION['oauth_nonce']);
+
+if ($tokens->idToken === null || !is_string($nonce) || $nonce === '') {
+    http_response_code(401);
+    exit('Missing id_token or session nonce.');
+}
+
+try {
+    $idClaims = $auth->verifyIdToken($tokens->idToken, $nonce);
+} catch (\Stromcom\AuthClient\Exception\TokenVerificationException $e) {
+    http_response_code(401);
+    exit('id_token verification failed: ' . $e->getMessage());
+}
+
+// Use $idClaims->subject as the authenticated user identity.
+```
+
 `$tokens` is a `TokenSet` with:
 
 - `$tokens->accessToken` — the JWT.
@@ -174,9 +197,9 @@ if (!is_string($jwt)) {
 }
 
 try {
-    $claims = $auth->verify($jwt);
+    $claims = $auth->verify($jwt, $auth->configuration->clientId);
 } catch (\Stromcom\AuthClient\Exception\TokenVerificationException) {
-    // Signature failed, or token expired, or token_use mismatch.
+    // Signature failed, token expired, wrong typ, missing required claim, etc.
     header('Location: /login');
     exit;
 }

@@ -33,8 +33,8 @@ echo "access_token  : {$tokens->accessToken}\n";
 echo "expires_in    : {$tokens->expiresIn}s\n";
 echo "authorization : {$tokens->authorizationHeader()}\n";
 
-$claims = $auth->verify($tokens->accessToken);
+$claims = $auth->verify($tokens->accessToken, $auth->configuration->clientId);
 echo "client_id     : {$claims->clientId}\n";
 echo "client_name   : {$claims->clientName}\n";
 echo 'roles         : ' . implode(', ', $claims->roles) . "\n";
-echo "token_use     : {$claims->tokenUse}\n";
+echo 'token_use     : ' . ($claims->tokenUse ?? '(none)') . "\n";

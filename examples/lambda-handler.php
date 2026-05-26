@@ -82,7 +82,7 @@ return static function (array $event): array {
   }
 
   try {
-    $claims = auth()->verify($m[1]);
+    $claims = auth()->verify($m[1], auth()->configuration->clientId);
     $claims->requireUserToken();
     $claims->requireGroup('translate-editor');
   } catch (TokenVerificationException $e) {

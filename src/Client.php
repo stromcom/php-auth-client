@@ -29,8 +29,11 @@ use Stromcom\AuthClient\Jwks\JwksCacheInterface;
  *   // 2. Callback: exchange code → tokens
  *   $tokens = $auth->exchangeCode($_GET['code'], $pkce->verifier);
  *
- *   // 3. Verify access token in your API
- *   $claims = $auth->verify($tokens->accessToken);
+ *   // 3a. Verify the OIDC id_token (nonce binding for the user session)
+ *   $idClaims = $auth->verifyIdToken($tokens->idToken, $nonce);
+ *
+ *   // 3b. Verify the access token (RFC 9068) before each protected API call
+ *   $claims = $auth->verify($tokens->accessToken, $auth->configuration->clientId);
  */
 final class Client {
 
@@ -170,17 +173,33 @@ final class Client {
   }
 
   /**
-   * Verify a JWT access token against the JWKS published by the auth server.
+   * Verify an RFC 9068 access token against the JWKS published by the auth
+   * server. Use this for tokens carried in `Authorization: Bearer ...` headers
+   * by your API callers.
    *
-   * @param list<string>|null $expectedAudiences When set, the token's `aud`
-   *   claim must contain at least one of these values. Defaults to the
-   *   client's own `client_id`.
+   * @param string $expectedAudience The resource server identifier the token
+   *   must be intended for. For an API gateway/service this is its own audience
+   *   value; for a confidential client validating tokens issued to itself this
+   *   is typically `$this->configuration->clientId`. There is no default — pass
+   *   it explicitly so the choice is visible at the call site.
    */
-  public function verify(string $jwt, ?array $expectedAudiences = null): Claims {
-    return $this->verifier()->verify(
-      $jwt,
-      $expectedAudiences ?? [$this->configuration->clientId],
-    );
+  public function verify(string $jwt, string $expectedAudience): Claims {
+    return $this->verifier()->verify($jwt, $expectedAudience);
+  }
+
+  /**
+   * Verify an OIDC Core 1.0 id_token. Use this on the value of
+   * `TokenSet::$idToken` after `exchangeCode()` to establish a user session.
+   *
+   * The audience is implicitly Configuration::$clientId (OIDC Core §3.1.3.7).
+   * The nonce MUST match the value returned as the fourth element of
+   * `beginAuthorization()` and persisted in the user's session.
+   *
+   * After a successful call, invalidate the persisted nonce — it is one-time
+   * use and must not be reused across authentications.
+   */
+  public function verifyIdToken(string $jwt, string $expectedNonce): Claims {
+    return $this->verifier()->verifyIdToken($jwt, $expectedNonce);
   }
 
   public function verifier(): TokenVerifier {

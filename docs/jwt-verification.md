@@ -1,29 +1,74 @@
 # JWT verification
 
-## Calling `verify()`
+This SDK exposes **two** verification methods because RFC 9068 access tokens
+and OIDC Core 1.0 id_tokens are different JWT profiles with different rules.
+
+| Token type        | Method                                     | Spec               |
+|-------------------|--------------------------------------------|--------------------|
+| Access token      | `Client::verify($jwt, $expectedAudience)`  | RFC 9068 §2        |
+| OIDC id_token     | `Client::verifyIdToken($jwt, $nonce)`      | OIDC Core 1.0 §3.1.3.7 |
+
+Never feed an id_token to `verify()` or an access token to `verifyIdToken()` —
+the `typ` JOSE header is checked on both paths to prevent cross-type
+confusion (RFC 8725 §3.11).
+
+## Calling `verify()` (RFC 9068 access tokens)
 
 ```php
-$claims = $auth->verify($jwt);                                // default audience: this client's clientId
-$claims = $auth->verify($jwt, expectedAudiences: ['svc_a']);  // explicit audience
-$claims = $auth->verify($jwt, expectedAudiences: null);       // skip audience check
+$claims = $auth->verify($jwt, $auth->configuration->clientId);
+$claims = $auth->verify($jwt, 'svc_resource_server');   // when a resource server has its own audience
 ```
 
-The verifier performs, in order:
+The verifier enforces, in order:
 
 1. **Parse** — 3 base64url segments, decode JSON.
 2. **Algorithm** — `header.alg === "RS256"`. Other algs are refused.
-3. **Key lookup** — find the JWK in the cached JWKS by `header.kid`. On
+3. **JOSE `typ`** — MUST be `at+jwt` (or `application/at+jwt`); RFC 9068 §2.1.
+4. **Key lookup** — find the JWK in the cached JWKS by `header.kid`. On
    miss, invalidate cache and refetch once before failing.
-4. **Signature** — `openssl_verify` with the JWK's `n`/`e` reconstructed
+5. **Signature** — `openssl_verify` with the JWK's `n`/`e` reconstructed
    into a PEM-encoded RSA public key.
-5. **Issuer** — `payload.iss === Configuration::$issuer`.
-6. **`token_use`** — present and non-empty (`user` or `service`).
-7. **Audience** — when `$expectedAudiences` is non-null, `payload.aud` must
-   contain at least one of them.
+6. **Issuer** — `payload.iss === Configuration::$issuer`.
+7. **Audience** — `payload.aud` MUST contain `$expectedAudience`.
 8. **Temporal claims** — `nbf` ≤ now + leeway, `iat` ≤ now + leeway,
    `exp` > now − leeway.
+9. **Required claims present** — `sub`, `client_id`, `jti`, `iat` (RFC 9068 §2.2).
 
 Failure raises `TokenVerificationException`.
+
+> **Note on `token_use`.** This is a stromcom-specific extension claim — not
+> defined by RFC 9068 — and is *not* enforced by the verifier. It is still
+> exposed on `Claims::$tokenUse` (nullable) and used by `Claims::isUser()` /
+> `Claims::isService()` / `Claims::requireUserToken()` / `Claims::requireServiceToken()`
+> if you need to discriminate.
+
+## Calling `verifyIdToken()` (OIDC Core 1.0 id_tokens)
+
+```php
+// In your /callback handler, after exchangeCode():
+$claims = $auth->verifyIdToken($tokens->idToken, $nonceFromSession);
+// Now invalidate $nonceFromSession — it is one-time use.
+unset($_SESSION['oauth_nonce']);
+```
+
+The verifier enforces, in order, per OIDC Core 1.0 §3.1.3.7:
+
+1. **Parse** — 3 base64url segments, decode JSON.
+2. **Algorithm** — `header.alg === "RS256"`.
+3. **JOSE `typ`** — MUST NOT be `at+jwt` (prevents access-token confusion).
+4. **Key lookup** — by `header.kid` (with cache-rotation retry).
+5. **Signature** — RS256 over JWKS public key.
+6. **Issuer** — `payload.iss === Configuration::$issuer`.
+7. **Audience** — `payload.aud` MUST contain `Configuration::$clientId`.
+8. **`azp`** — when `aud` has multiple entries OR `azp` is present, `azp`
+   MUST equal `Configuration::$clientId`.
+9. **Temporal claims** — `exp` / `iat` valid w.r.t. clock with leeway.
+10. **Nonce** — `payload.nonce` MUST be a non-empty string equal (timing-safe)
+    to `$expectedNonce`.
+11. **Required claims present** — `sub`, `iat`.
+
+`$expectedNonce` MUST be a non-empty string — pass the nonce returned by
+`beginAuthorization()` and persisted in the user's session.
 
 ## What `Claims` contains
 
@@ -38,7 +83,7 @@ Failure raises `TokenVerificationException`.
 | `$claims->issuedAt`             | `iat` (int)                                              |
 | `$claims->expiresAt`            | `exp` (int)                                              |
 | `$claims->jti`                  | `jti`                                                    |
-| `$claims->tokenUse`             | `token_use`                                              |
+| `$claims->tokenUse`             | `token_use` (stromcom extension, nullable — not in RFC 9068) |
 | `$claims->isUser()`             | `token_use === 'user'`                                   |
 | `$claims->isService()`          | `token_use === 'service'`                                |
 | `$claims->email`                | `email` (`null` if not in scope)                         |
@@ -87,7 +132,7 @@ HTTP 403:
 
 ```php
 try {
-    $claims = $auth->verify($jwt);
+    $claims = $auth->verify($jwt, $auth->configuration->clientId);
     $claims->requireUserToken();
     $claims->requireGroup('translate-editor');
 } catch (\Stromcom\AuthClient\Exception\TokenVerificationException) {
@@ -117,8 +162,9 @@ A user token issued with `scope=openid email` contains `sub`, `email`,
 `roles` for authorization, request `scope=roles` at `beginAuthorization()`.
 
 For **service tokens**, scope does not filter claims. `client_id`,
-`client_name`, `roles`, `is_admin`, `token_use` are always present. `groups`
-is never present (groups are a per-user concept).
+`client_name`, `roles`, `is_admin` are always present, and the stromcom-specific
+`token_use=service` is also emitted by the auth server. `groups` is never present
+(groups are a per-user concept).
 
 ## Key rotation
 

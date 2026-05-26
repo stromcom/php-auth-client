@@ -11,10 +11,30 @@ Self-contained PHP 8.3+ client library:
 - OAuth 2.0 Client Credentials flow (machine-to-machine)
 - Refresh token grant
 - Local JWT verification via JWKS with TTL cache and `kid`-rotation
+- Two verification paths — `Client::verify()` for RFC 9068 access tokens
+  and `Client::verifyIdToken()` for OIDC Core 1.0 §3.1.3.7 id_tokens
 - UserInfo (`/me`) call
 - Logout URL builder
 - OIDC discovery (`/.well-known/openid-configuration`)
-- RFC 9068 strict (`iss`, `token_use`, `at+jwt` required)
+
+## Specs the verifier follows (authoritative)
+
+When this file disagrees with the spec, **the spec wins** — update this file.
+
+- **Access tokens — RFC 9068, "JWT Profile for OAuth 2.0 Access Tokens":**
+  - §2.1: JOSE header MUST set `typ=at+jwt` (or `application/at+jwt`).
+  - §2.2 REQUIRED claims: `iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`.
+  - `token_use` is NOT in this spec — do not require it.
+- **id_tokens — OpenID Connect Core 1.0 §3.1.3.7 (ID Token Validation):**
+  - `iss` matches expected issuer.
+  - `aud` contains `client_id`; if `aud` is multi-valued OR `azp` is present,
+    `azp` MUST equal `client_id`.
+  - Signature verifies; `alg` is the one this client expects (RS256 here).
+  - `exp`/`iat` valid w.r.t. clock.
+  - `nonce`, if a nonce was sent in the authorization request, MUST be present
+    and equal — this SDK requires nonce on `verifyIdToken()` (no opt-out).
+- **Token type confusion — RFC 8725 §3.11:** reject `typ=at+jwt` when
+  verifying as an id_token, and require it when verifying as an access token.
 
 **Production runtime dependencies:** only `lcobucci/jwt: ^5.5` (and its
 transitive `psr/clock`). JWT parsing, signature verification and temporal
@@ -97,9 +117,12 @@ helper deserves to be public, move it up.
 4. **HTTP transport is injectable.** All HTTP goes through
    `HttpClientInterface`. Never call cURL directly anywhere else.
 5. **JWKS cache is injectable.** Always go through `JwksCacheInterface`.
-6. **Strict by default.** RFC 9068 requires `iss`, `token_use`. Don't add a
-   "lenient mode" toggle without a strong reason — strict-in-what-you-accept
-   is the security default and the server emits those claims.
+6. **Strict by default, by spec.** Verification follows RFC 9068 (access
+   tokens) and OIDC Core 1.0 §3.1.3.7 (id_tokens) literally. Don't add a
+   "lenient mode" toggle. Don't widen the verifier with non-standard claims
+   (e.g. `token_use`) — surface those on `Claims` so consumers can opt in,
+   but never refuse a spec-valid token because a stromcom-specific extension
+   is missing.
 7. **`Claims` is read-only and rich.** When users ask "how do I check X",
    the answer should be "Claims has a method for that". Add to the API rather
    than telling users to dig into `$claims->all`.
@@ -113,6 +136,14 @@ helper deserves to be public, move it up.
 - Reuse `postToken()` — don't duplicate the request building.
 - Update `docs/auth-code-flow.md` or `docs/service-account.md` (or add a new doc).
 - Add a unit test against `Client` with a mock `HttpClientInterface`.
+
+### A new verifier rule
+- First check whether RFC 9068, OIDC Core 1.0, or RFC 8725 require it. If
+  yes, add it to `TokenVerifier::verify()` / `verifyIdToken()` with a comment
+  pointing to the spec section.
+- If the rule comes from a stromcom-specific convention, do NOT add it to
+  the verifier. Expose the claim on `Claims` and let consumers opt in via
+  `requireX()` helpers.
 
 ### A new claim from the server
 - If it's an OIDC-standard claim → map it explicitly in `Claims::fromPayload`.
@@ -138,14 +169,21 @@ This SDK is paired with `auth.stromcom.cz`. **Specific contract relied on:**
 - `GET /me` — UserInfo with `Authorization: Bearer …`.
 - `GET /oauth/logout` — end-session, optional `post_logout_redirect_uri`.
 
-**JWT contract:**
-- Header: `{typ: "at+jwt", alg: "RS256", kid: "..."}`
-- Always present: `iss`, `sub`, `aud`, `iat`, `nbf`, `exp`, `jti`, `scopes`, `token_use`
-- Service tokens add: `client_id`, `client_name`, `roles`, `is_admin`
+**Access token JWT contract (RFC 9068 + stromcom extensions):**
+- JOSE header: `{typ: "at+jwt", alg: "RS256", kid: "..."}` — required by RFC 9068.
+- REQUIRED by RFC 9068 §2.2: `iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`.
+- Also present (non-spec, stromcom extensions): `nbf`, `scopes`, `token_use`.
+- Service tokens add: `client_name`, `roles`, `is_admin`.
 - User tokens add (filtered by scope, OIDC Core 1.0 §5.4):
   `name`, `given_name`, `family_name`, `email`, `email_verified`,
   `phone_number`, `phone_number_verified`, `picture`, `locale`, `zoneinfo`,
-  `updated_at`, `roles`, `groups`, `is_admin`
+  `updated_at`, `roles`, `groups`, `is_admin`.
+
+**id_token JWT contract (OIDC Core 1.0):**
+- JOSE header: `{typ: "JWT" or omitted, alg: "RS256", kid: "..."}` — `typ` MUST NOT be `at+jwt`.
+- REQUIRED (OIDC Core 1.0 §2): `iss`, `sub`, `aud`, `exp`, `iat`.
+- Required when a nonce was sent in the authorize request: `nonce`.
+- Required when `aud` is multi-valued: `azp` equal to `client_id`.
 
 If the server changes any of this, this SDK needs corresponding updates.
 

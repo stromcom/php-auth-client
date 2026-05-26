@@ -32,7 +32,7 @@ if (!preg_match('/^Bearer\s+(.+)$/i', $header, $m)) {
 }
 
 try {
-  $claims = $auth->verify($m[1]);
+  $claims = $auth->verify($m[1], $auth->configuration->clientId);
   $claims->requireGroup('translate-editor');
 } catch (TokenVerificationException $e) {
   http_response_code(401);
