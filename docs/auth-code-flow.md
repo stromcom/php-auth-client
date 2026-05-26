@@ -53,25 +53,31 @@ $auth = new Client(new Configuration(
 ));
 
 session_start();
-[$url, $pkce, $state] = $auth->beginAuthorization(
+[$url, $pkce, $state, $nonce] = $auth->beginAuthorization(
     scopes: ['openid', 'profile', 'email', 'groups'],
 );
 
 $_SESSION['oauth_verifier'] = $pkce->verifier;
 $_SESSION['oauth_state']    = $state;
+$_SESSION['oauth_nonce']    = $nonce;
 
 header('Location: ' . $url);
 exit;
 ```
 
-`beginAuthorization()` returns three values:
+`beginAuthorization()` returns four values:
 
 - `$url` — the authorization URL with `client_id`, `redirect_uri`, `scope`,
-  `state`, `code_challenge`, `code_challenge_method=S256` filled in.
+  `state`, `code_challenge`, `code_challenge_method=S256` (and `nonce` when
+  `openid` is in scope) filled in.
 - `$pkce` — a `Pkce` object. **Save `$pkce->verifier`** in the session;
   you'll need it at step 3.
 - `$state` — a random 32-char hex string. **Save it** and verify the value
   returned in step 2 matches.
+- `$nonce` — a random 32-char hex string when `openid` is in the requested
+  scope (otherwise `null`). It is added to the authorization request
+  automatically; persist it and compare against the `nonce` claim of the
+  returned id_token.
 
 ### 2. Receive the callback
 
@@ -235,7 +241,7 @@ revocation endpoint exposed.
 To force the user to re-enter credentials (e.g. for a sensitive operation):
 
 ```php
-[$url, $pkce, $state] = $auth->beginAuthorization(
+[$url, $pkce, $state, $nonce] = $auth->beginAuthorization(
     extraParams: ['prompt' => 'login'],
 );
 ```

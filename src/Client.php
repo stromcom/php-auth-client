@@ -23,7 +23,7 @@ use Stromcom\AuthClient\Jwks\JwksCacheInterface;
  *   ));
  *
  *   // 1. Web app login: redirect user
- *   [$url, $pkce, $state] = $auth->beginAuthorization();
+ *   [$url, $pkce, $state, $nonce] = $auth->beginAuthorization();
  *   header('Location: ' . $url);
  *
  *   // 2. Callback: exchange code → tokens
@@ -53,32 +53,44 @@ final class Client {
    * Build the authorization URL for the authorization_code + PKCE flow.
    *
    * Returns the URL, the PKCE pair (keep `verifier` in session, you'll need it
-   * for `exchangeCode`) and the `state` value (compare against the value the
-   * server will echo back in the callback to defeat CSRF).
+   * for `exchangeCode`), the `state` value (compare against the value the
+   * server will echo back in the callback to defeat CSRF) and the `nonce`
+   * (non-null only when `openid` is in the requested scope; persist it and
+   * compare against the `nonce` claim of the returned id_token).
    *
    * @param list<string>|null $scopes Overrides Configuration::$defaultScopes.
    * @param array<string, string> $extraParams Additional query parameters (e.g. `prompt=login`).
    *
-   * @return array{0: string, 1: Pkce, 2: string}
+   * @return array{0: string, 1: Pkce, 2: string, 3: ?string}
    */
   public function beginAuthorization(?array $scopes = null, array $extraParams = []): array {
     $pkce = Pkce::generate();
     $state = bin2hex(random_bytes(16));
+    $effectiveScopes = $scopes ?? $this->configuration->defaultScopes;
 
     $params = array_merge([
       'response_type'         => 'code',
       'client_id'             => $this->configuration->clientId,
       'redirect_uri'          => $this->configuration->requireRedirectUri(),
-      'scope'                 => implode(' ', $scopes ?? $this->configuration->defaultScopes),
+      'scope'                 => implode(' ', $effectiveScopes),
       'state'                 => $state,
       'code_challenge'        => $pkce->challenge,
       'code_challenge_method' => $pkce->method,
     ], $extraParams);
 
+    $nonce = null;
+    if (in_array('openid', $effectiveScopes, true)) {
+      $nonce = isset($params['nonce']) && $params['nonce'] !== ''
+        ? $params['nonce']
+        : bin2hex(random_bytes(16));
+      $params['nonce'] = $nonce;
+    }
+
     return [
       $this->configuration->authorizationEndpoint . '?' . http_build_query($params),
       $pkce,
       $state,
+      $nonce,
     ];
   }
 

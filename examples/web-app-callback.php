@@ -41,9 +41,10 @@ $auth = new Client(
 $path = parse_url((string) $_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
 
 if ($path === '/login') {
-  [$url, $pkce, $state] = $auth->beginAuthorization();
+  [$url, $pkce, $state, $nonce] = $auth->beginAuthorization();
   $_SESSION['oauth_verifier'] = $pkce->verifier;
   $_SESSION['oauth_state']    = $state;
+  $_SESSION['oauth_nonce']    = $nonce;
   header('Location: ' . $url);
   exit;
 }

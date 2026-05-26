@@ -46,9 +46,10 @@ $auth = new Client(new Configuration(
 ```php
 // 1. Anywhere a protected page needs auth — start the flow.
 session_start();
-[$url, $pkce, $state] = $auth->beginAuthorization();
+[$url, $pkce, $state, $nonce] = $auth->beginAuthorization();
 $_SESSION['oauth_verifier'] = $pkce->verifier;
 $_SESSION['oauth_state']    = $state;
+$_SESSION['oauth_nonce']    = $nonce; // null if `openid` is not in scope
 header('Location: ' . $url);
 
 // 2. In your /oauth/callback handler — validate state, exchange code.

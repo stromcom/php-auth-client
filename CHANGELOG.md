@@ -4,6 +4,17 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this package adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-05-26
+
+### Changed
+
+- `Client::beginAuthorization()` now auto-generates a `nonce` whenever `openid`
+  is in the requested scope and adds it to the authorization request. The
+  return tuple gained a fourth element — `$nonce` (string when `openid` is in
+  scope, `null` otherwise). Existing `[$url, $pkce, $state]` destructures keep
+  working; persist the nonce alongside `state` and verify it against the
+  `nonce` claim of the returned id_token.
+
 ## [1.1.0] — 2026-05-14
 
 ### Added
