@@ -74,6 +74,7 @@ final class JwkRsaKey {
     return "\x03" . self::encodeLength(strlen($bytes) + 1) . "\x00" . $bytes;
   }
 
+  /** @param int<0, max> $length */
   private static function encodeLength(int $length): string {
     if ($length < 0x80) {
       return chr($length);
@@ -83,7 +84,7 @@ final class JwkRsaKey {
       $bytes = chr($length & 0xff) . $bytes;
       $length >>= 8;
     }
-    return chr(0x80 | strlen($bytes)) . $bytes;
+    return chr((0x80 | strlen($bytes)) & 0xff) . $bytes;
   }
 
 }

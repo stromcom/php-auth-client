@@ -13,12 +13,13 @@
         "lcobucci/jwt": "^5.5"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11.5",
+        "friendsofphp/php-cs-fixer": "^3.94",
         "phpstan/phpstan": "^2.1",
-        "friendsofphp/php-cs-fixer": "^3.94"
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpunit/phpunit": "^11.5"
     },
     "scripts": {
-        "test:unit": "phpunit",
+        "test:unit": "vendor/bin/phpunit --configuration phpunit.xml",
         "phpstan": "vendor/bin/phpstan analyse -c phpstan.dist.neon --memory-limit=512M",
         "cs": "php-cs-fixer fix --dry-run --diff --cache-file=tmp/php-cs-fixer.cache",
         "cs-fix": "php-cs-fixer fix --cache-file=tmp/php-cs-fixer.cache",

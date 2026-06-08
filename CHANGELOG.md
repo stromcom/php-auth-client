@@ -4,6 +4,23 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this package adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] — 2026-06-08
+
+### Fixed
+
+- Removed `curl_close()` calls from `CurlHttpClient`. The function has been a
+  no-op since PHP 8.0 (the cURL handle is a `CurlHandle` object freed on
+  scope exit) and is deprecated as of PHP 8.5, where it emitted a deprecation
+  warning at runtime.
+- Two PHPStan level-8 findings in `Internal/JwkRsaKey::encodeLength()`
+  (`chr()` argument range).
+
+### Changed
+
+- Dev tooling: added `phpstan/phpstan-deprecation-rules` and enabled it in
+  `phpstan.dist.neon`, so `composer phpstan` now fails on calls to deprecated
+  functions (this is what would have caught the `curl_close()` deprecation).
+
 ## [2.0.0] — 2026-05-26
 
 Realigns the verifier with the relevant specs (RFC 9068 for access tokens,
